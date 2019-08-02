@@ -21,6 +21,7 @@ library(tidyr)
 library(tidytext)
 library(wordcloud)
 library(plotly)
+library(textdata)
 ```
 
 ## Sentiment in Music

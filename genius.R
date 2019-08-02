@@ -35,7 +35,14 @@ geniusLyrics <- geniusLyricsUnmodified %>%
   mutate(Position = row_number())
 
 # get TermDocumentMatrix to analyze most commonly used words.
-vs <- VectorSource(geniusLyrics$Lyrics)
+
+
+lyricsByYears <- geniusLyrics %>%
+  group_by(Year) %>%
+  filter(Position == max(Position))
+
+
+vs <- VectorSource(lyricsByYears$Lyrics)
 cp <- VCorpus(vs)
 
 tMatrix <- TermDocumentMatrix(cp, control = list(
