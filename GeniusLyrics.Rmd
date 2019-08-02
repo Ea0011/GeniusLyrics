@@ -1,0 +1,158 @@
+---
+title: "Genius Lyrics"
+author: "Edvard Avagyan, Tigran Avetisyan, Narek Sahakyan, Davit Sargsyan, Hayk Hayrapetyan"
+date: "8/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = "center")
+```
+
+* Be sure to have the  following libraries installed before processing further.
+
+```{r librarys, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(tm)
+library(SnowballC)
+library(tidyr)
+library(tidytext)
+library(wordcloud)
+library(plotly)
+```
+
+## Sentiment in Music
+
+Music people listen to can be a great source of exciting information. It can open the door to undesrtanding why particular songs are very popular while others do not get enough attanetion. It can help understand where the trend is going and how music has evolved during years. The key to making such observations substantially lies in the lyrics of the songs, the richest source of information about the song. Through lyrics, one can observe the mood prevailing in the song and what words contribute to creating that mood.  
+In order to analyze songs, we scrapped lyrics of all-time top viewed songs from [Genius](https://genius.com/). The tool we used to scrap the lyrics uses Python Selenium to interact with the website and get the desired data.
+[(Scrapping Tool)](https://github.com/Ea0011/lyrics_scrapper).  
+
+## The Data
+
+The data we are going to work with consists of 100 most viewed songs on Genius.
+```{r include=FALSE}
+geniusLyrics <- read.csv("lyrics_with_dates.csv", stringsAsFactors = F)
+```
+```{r}
+str(geniusLyrics)
+```
+Our data frame has the following information about each song. *Author*, *Title*, *Lyrics*, *Release Date*, *Album* and *Views*. We can already notice that there are problems with the data. Types of variables in the data are wrong. Moreover, lyrics of songs contain a lot of text related problems.
+```{r echo=FALSE}
+geniusLyrics[2, "Lyrics"]
+```
+We can see that there are a lot of symbols that will hinder analysis. Also, text is full of white space, line breaks and annotations which are not part of lyrics. So, we will need to pre-process the data bfore preforming actual analysis. Libraries ```dplyr``` and ```stringr``` are perfect to manipulate the data and get rid of existing problems.
+```{r}
+geniusLyrics <- geniusLyrics %>%
+  mutate(Views = as.numeric(str_remove_all(Views, pattern = 'M'))) %>%
+  mutate(Release.Date = as.Date(Release.Date, format = '%B %d, %Y')) %>%
+  mutate(Lyrics = str_remove_all(string = Lyrics, pattern = '\\s*\\([^\\)]+\\)')) %>%
+  mutate(Lyrics = str_remove_all(string = Lyrics, pattern = '\\s*\\[[^\\]]+\\]')) %>%
+  mutate(Lyrics = iconv(Lyrics, to = 'ASCII', sub = '')) %>%
+  mutate(Lyrics = trimws(Lyrics)) %>%
+  filter(Title != 'Despacito (Remix)') %>%
+  mutate(Year = format(Release.Date, '%Y')) %>%
+  mutate(Position = row_number())
+```
+First, we transform variables to their appropriate types. Using regex, we remove annotations from lyrics, remove any non ASCII characters and get rid of unnecessary whit space. Also, we remove a particular song because it mainly in spanish which hinders sentiment analysis. We add new variables to the dataset. ``Year`` is for observing differences that between songs released in particular year. Since our scrapping tool scrapped the table from top to bottom we also can add variable ``Position`` which describes the place in the all-time top chart of each song.  
+
+## Sentiment Analysis
+
+
+Sentiment analysis is meant to get overall impression of the emotions, mood and sentiment from the song. It involves assigning a label to each word in the lyrics and those labels can differ in their nature. For instance, one can assign a weight or a score to each word which tells how good or bad each word is to some degree. Wrods can be labeled just negative or positive without giving them a weight or they can be labeled according to the emotions they emit. Having such labels assigned to each song enables us to extract sentiment from the song. However, there are several approaches to this. After assiging labels, one can analyze sentiment in so called intervals. For example, we can analyze sentiment per sentnce, per paragraph or per the whole song. But since songs in the list are very short compared to text found in books, or speech reports it is unviable to assess  sentiment level per song or per sentence. Rather, we can analyze sentiment per word and this gives several advantages and can yield substantial insights about sentiment in songs. We can observe how sentiment changes during the song or which emotions prevail in each song.  
+Library ``tidytext`` has a method that provides dataset of words already labeled for sentiment analysis. There are 3 options that come with the library.  
+
+1. Words labeled as positive or negative
+```{r}
+head(get_sentiments("bing"), n = 5)
+```
+2. Words labeled with a dgree of positivity or negativity
+```{r}
+head(get_sentiments("afinn"), n = 5)
+```
+3. Words labeled as an emotion they ellicit.
+```{r}
+tail(get_sentiments("loughran"), n = 5)
+```
+
+To proceed with sentiment analysis, we need to extract words from the lyrics in our dataset and match them to the words in sentiments dataset in order to get appropriate labelds for our words. Tokenizing lyrics will greatly transform our dataset. Instead of having one data frame in a wide format that represents each song, we are going to have a data frame in a long format that shows to which particular song aa word belongs to.
+```{r}
+tokenizedLyrics <- geniusLyrics %>%
+  unnest_tokens(word, Lyrics)
+
+str(tokenizedLyrics)
+```
+```{r}
+dim(tokenizedLyrics)
+```
+```{r}
+head(tokenizedLyrics, n = 5)
+```
+
+Instead of 99 rows, in our new data we have ``59252`` rows as expected.  
+Before labeling words in our new data we should remove common words found almost in every text which are called stopwords. Common examples of stopwords are *the*, *a*. Such words do not give meaningful value to the sentiment of the song so they can be removed. Stopwords can be retrieved using ``stopwords('language')``
+```{r}
+stopwordsDf <- data.frame(word = stopwords('en'), stringsAsFactors = F)
+
+tokenizedLyrics <- tokenizedLyrics %>%
+  anti_join(stopwordsDf, by = "word")
+
+dim(tokenizedLyrics)
+```
+Notice that the number of words in the data got almost halved, there were a lot of stopwords used in lyrics.  
+Format of our data makes it really easy to obtain sentiment scores for words. It is simply a matter of performing a join with already labeled words, similar to what we did in order to remove stopwords.
+```{r}
+bingSentiments <- tokenizedLyrics %>%
+  inner_join(get_sentiments("bing"), by = "word")
+
+dim(bingSentiments)
+```
+
+```{r}
+afinnSentiments <- tokenizedLyrics %>%
+  inner_join(get_sentiments("afinn"), by = "word")
+
+dim(afinnSentiments)
+```
+
+```{r}
+loughranSentiments <- tokenizedLyrics %>%
+  inner_join(get_sentiments("loughran"), by = "word")
+
+dim(loughranSentiments)
+```
+
+Structure of our data frame is not much different from what it was. Number of observations got lower and one more column got added to our data. In case of ``bing`` and ``loughran`` sentiment scores we have a column ``sentument`` representin the label, in case of ``afinn`` score, we get a column column named ``value`` which represents sentiment weight for each word.  
+
+
+## Performing Sentiment Analysis
+
+
+Now, as we have sentiment scores per word, we can start looking at what our data can tell us about all-time top charted songs. First, lets see how many words there are per year in our data.
+
+```{r}
+bingSentiments %>%
+  group_by(Year) %>%
+  summarise(Number.Of.Words = n()) %>%
+  arrange(desc(Number.Of.Words))
+```
+
+There are years which have low number of words. This can be a hinderance in understanding how sentiments changed over time, but understanding the change in proportion of negative and positive words during time is possible. Also, we can observe polarity, the difference between number of positive and negative words.
+
+```{r}
+changeOverTime <- bingSentiments %>%
+  group_by(Year) %>%
+  summarise(negatives = sum(sentiment == "negative"), positives = sum(sentiment == "positive")) %>%
+  mutate(proportion =  positives / negatives) %>%
+  mutate(polarity = positives - negatives)
+
+tail(changeOverTime, n = 5)
+```
+
+```{r}
+changeOverTime %>%
+  ggplot(aes(x = Year, y = proportion)) + 
+  geom_bar(stat = "identity") + 
+  coord_polar(theta = "x")
+```
