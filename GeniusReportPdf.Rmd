@@ -7,7 +7,7 @@ always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, fig.align = "center")
 ```
 
 * Be sure to have the  following libraries installed before processing further.
@@ -24,6 +24,8 @@ library(wordcloud)
 library(plotly)
 library(RColorBrewer)
 library(textdata)
+library(colortools)
+library(magrittr)
 ```
 
 ## Sentiment in Music
@@ -59,6 +61,202 @@ geniusLyrics <- geniusLyrics %>%
   mutate(Position = row_number())
 ```
 First, we transform variables to their appropriate types. Using regexp, we remove annotations from lyrics, remove any non ASCII characters and get rid of unnecessary whit space. Also, we remove a particular song because it mainly in Spanish which hinders sentiment analysis. We add new variables to the dataset. ``Year`` is for observing differences that between songs released in particular year. Since our scrapping tool scrapped the table from top to bottom we also can add variable ``Position`` which describes the place in the all-time top chart of each song.  
+
+## Text Analysis
+In order to visualize the most frequently used and the most important words weighted using tf-idf will wil use comparison clouds. As the amount of the observations is very large for creating a meaningful comparison cloud, we will filter the lyrics by picking the most popular songs based on their views for each unique year. As a result of filtering we get only 12 observations as there are only 12 unique years.
+```{r warning=FALSE, message=FALSE}
+lyricsByYears <- geniusLyrics %>%
+  group_by(Year) %>%
+  filter(Position == min(Position))%>%
+  as.data.frame()
+
+colors <- c("#4BB446","#46B478","#46B4AF",
+            "#4682B4","#464BB4","#7846B4",
+            "#AF46B4","#B44682" ,"#B4464B",
+            "#B47846","#B4AF46","#82B446")
+
+str(lyricsByYears)
+```
+
+We create two comparison clouds. For the first one we control the TermDocumentMatrix using the term frequency, in order to visualize the most frequently used words in the filtered lyrics
+```{r warning=FALSE, message=FALSE}
+compareAndCloud <- function(lyrics,colNames,cols,option=weightTf,setThresold=F){
+  vs <- VectorSource(lyrics)
+  cp <- VCorpus(vs)
+  tdm <- TermDocumentMatrix(cp, control = list(
+    removePunctuation = T,
+    stopwords = T,
+    removeNumbers = T,
+    weighting = option
+  ))
+  if(setThresold){
+    tdm <- removeSparseTerms(tdm,0.99) 
+  }
+  lyricMatrix <- as.matrix(tdm)
+  colnames(lyricMatrix) <- colNames
+  set.seed(2)
+  comparison.cloud(lyricMatrix, 
+                   max.words = 100,
+                   colors= cols,
+                   min.freq = 10,
+                   scale=c(1,0.5),
+                   title.size=1,
+                   title.colors = cols)
+}
+
+createComparisonCloud <- function(filtered,option=weightTf,setThresold=F){
+  compareAndCloud(lyrics = filtered$Lyrics,colNames = filtered$Year, cols = colors,
+                  option = option, setThresold = setThresold)
+}
+
+createComparisonCloud(lyricsByYears)
+
+```
+
+
+
+For the second comparison cloud we control the weighting of the words using tf-idf in order to find out the most important words used in the filtered songs. There are many words which appear in both comparison clouds which means most of the frequent words in these songs are also very important.
+```{r warning=FALSE, message=FALSE}
+createComparisonCloud(lyricsByYears,weightTfIdf,T)
+```
+
+Visualizing the most frequent words in the filtered songs using a bar plot
+```{r warning=FALSE, message=FALSE}
+
+visualizeTopNWords <- function(filtered,topNum){
+  vs <- VectorSource(filtered$Lyrics)
+  cp <- VCorpus(vs)
+  
+  tdm <- TermDocumentMatrix(cp, control = list(
+    removePunctuation = T,
+    stopwords = T,
+    removeNumbers = T
+  ))
+  lyricsMatrix <- as.matrix(tdm)
+  
+  df_freq <- data.frame(terms=rownames(lyricsMatrix), 
+                        freq=rowSums(lyricsMatrix), 
+                        stringsAsFactors = F)
+  
+  
+  top_num <- df_freq %>% 
+    top_n(topNum, freq) %>%
+    arrange(desc(freq))
+  
+  top_num %>%
+    ggplot(aes(x=reorder(terms,freq),y = freq, fill=terms))+
+    geom_bar(stat="identity")+
+    labs(x="Words", y="Number of occurences",
+         title="The most popular words in the most popular songs for filtered Years")+
+     theme(legend.position = "none")
+}
+
+visualizeTopNWords(lyricsByYears,10)
+```
+
+Let's compare the most frequent words of the newest and oldest songs in our filtered lyrics.
+As it is visible from the comparison cloud, the oldest song's lyrics has higher variety of words which are used very frequently in the lyrics, whereas there are only a few words in the newest song's lyrics that appear frequently in the song.
+```{r warning=FALSE, message=FALSE}
+compareOldestNewest <- function(filtered){
+  oldestLyrics <- filtered %>% 
+    filter(Year == min(Year))
+  
+  newestLyrics <- filtered %>%
+    filter(Year == max(Year))
+
+  lyricsForBoth <- c(oldestLyrics$Lyrics, newestLyrics$Lyrics)
+  colnames <- c(oldestLyrics$Year, newestLyrics$Year)
+  colors <- c('red','blue')
+  compareAndCloud(lyricsForBoth,colNames = colnames,cols = colors)
+}
+
+compareOldestNewest(lyricsByYears)
+
+```
+
+
+Now let's analyze the appearance of common words in the filtered songs.
+The barplot shows that the highest number of common words are shared between the most popular songs of 2012 and 2013, and the least common words are in the popular songs of 2014 and 2015. The number of common words is generated after removing punctuation, numbers and stopwords from the lyrics.
+```{r}
+commonWordsCount <- function(lyrics){
+  vs <- VectorSource(lyrics)
+  cp <- VCorpus(vs)
+  tdm <- TermDocumentMatrix(cp, control = list(
+    removePunctuation = T,
+    stopwords = T,
+    removeNumbers = T
+  ))
+  commonMatrix <- as.matrix(tdm)
+  colnames(commonMatrix) <- c("first","second")
+  rownames(tdm)
+  commonWords <- data.frame(terms = rownames(commonMatrix),commonMatrix) %>% 
+    filter(first > 0 & second > 0)
+  return(nrow(commonWords))
+}
+
+compareCommons <- function(filtered){
+  i <- 1
+  commonCounts <- c()
+  filtered <- filtered %>%
+  arrange(desc(Year))
+  ranges <- c()
+  
+  while(i < nrow(filtered)){
+    first <- filtered[i,]
+    second <- filtered[i+1,]
+    combined <- c(first$Lyrics,second$Lyrics)
+    commonCounts <- c(commonCounts, commonWordsCount(combined))
+    ranges <- c(ranges,paste(second$Year,first$Year, sep = "&"))
+    i = i + 2
+  }
+  
+  commonDf <- data.frame(ranges, commonCounts)
+  colnames(commonDf) <- c("Mutual","Count")
+  commonDf$Mutual <- as.factor(commonDf$Mutual)
+  return(commonDf)
+}
+
+
+compareCommons(lyricsByYears) %>%
+  ggplot(aes(x = reorder(Mutual,Count), y = Count, fill = Mutual))+
+  geom_bar(stat = "identity", fill = colors[1:6])+
+    labs(x="The years of the songs", y="The number of common words",
+         title="The distribution of common words in each range of succeding unique years")+
+     theme(legend.position = "none")+
+      coord_flip()
+```
+
+Now let's do a little analysis of the filtered song's lyrics by seperating each word in the songs
+```{r}
+seperatedWords <- lyricsByYears %>%
+  unnest_tokens(word, Lyrics)
+
+wordsGroups <- seperatedWords %>%
+  group_by(Year,word) %>%
+  summarise(count = n())
+
+```
+
+The number of common words in the newest and oldest song is 46, whereas the usage of the same word between the newest popular song and the one from the previous year appears 40 times. 
+```{r}
+
+oldLyrics  <- wordsGroups %>% filter(Year == "1975")
+newLyrics  <- wordsGroups %>% filter(Year == "2019")
+
+commonWords <- oldLyrics %>%
+  inner_join(newLyrics, by = "word")
+
+dim(commonWords)
+
+
+pastYearLyrics <- wordsGroups %>% filter(Year == "2018")
+
+currentCommonWords <- pastYearLyrics %>%
+  inner_join(newLyrics, by = "word")
+
+dim(currentCommonWords)
+
+```
 
 ## Sentiment Analysis
 
@@ -346,7 +544,7 @@ geniusLyrics %>%
 
 Lets analyse how sentiment changes throughout songs of top authors. We first get top 5 viewed songs for those authors, and then perform an inner join to get words and their sentiment values for those songs.
 
-```{r}
+```{r fig.height=10, fig.width=10, fig.align="left"}
 topSongsPerAuthor <- afinnSentiments %>%
   group_by(Author, Title) %>%
   summarise(Popularity = Position[1]) %>%
@@ -358,7 +556,7 @@ topSongsPerAuthor <- afinnSentiments %>%
 
 Since unnesting lyrics as separate words keeps the words in the same order as they appear in the lyrics, we can get that position using the function ``row_number`` from ``dplyr``. Since we know the position of each labeled word in the lyrics, we can now visualize how sentiment changes over the course of each song.
 
-```{r}
+```{r fig.height=10, fig.width=10, fig.align="left"}
 topSongsPerAuthor %>%
   filter(Author.x == "Eminem") %>%
   group_by(Title) %>%
@@ -371,7 +569,7 @@ topSongsPerAuthor %>%
   labs(y = "Sentiment", x = "Progress", title = "Sentiment Over the Song")
 ```
 
-```{r}
+```{r fig.height=10, fig.width=10, fig.align="left"}
 topSongsPerAuthor %>%
   filter(Author.x == "Kendrick Lamar") %>%
   group_by(Title) %>%
@@ -384,7 +582,7 @@ topSongsPerAuthor %>%
   labs(y = "Sentiment", x = "Progress", title = "Sentiment Over the Song")
 ```
 
-```{r}
+```{r fig.height=10, fig.width=10, fig.align="left"}
 topSongsPerAuthor %>%
   filter(Author.x == "Drake") %>%
   group_by(Title) %>%
