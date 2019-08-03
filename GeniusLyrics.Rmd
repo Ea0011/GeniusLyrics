@@ -190,7 +190,7 @@ changeOverTime %>%
 
 The year with most positive to negative ratio is 2019. Moreover, number of positive words is almost twice the number of negative words. Compared to other years, 2019 boasts with good sentiment. The least positive year is 2010. Negative sentiment greatly prevailed in 2010. It becomes clear that more negative sentiment is expressed in general, as most of the time the ratio is either less than 1 or little more than 1. We can also observe how the polarity changes in the same manner.
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 changeOverTime %>%
   ggplot(aes(x = Year, y = polarity, fill = polarity)) + 
   geom_bar(stat = "identity") + 

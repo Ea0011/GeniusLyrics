@@ -7,6 +7,7 @@ library(tidyr)
 library(tidytext)
 library(wordcloud)
 library(plotly)
+library(RColorBrewer)
 
 #  for ggplot
 themeObject <- function() {
@@ -39,19 +40,58 @@ geniusLyrics <- geniusLyricsUnmodified %>%
 
 lyricsByYears <- geniusLyrics %>%
   group_by(Year) %>%
-  filter(Position == max(Position))
+  filter(Position == min(Position))%>%
+  as.data.frame()
+
+createComparisonCloud <- function(filtered){
+  vs <- VectorSource(filtered$Lyrics)
+  cp <- VCorpus(vs)
+  tdm <- TermDocumentMatrix(cp, control = list(
+    removePunctuation = T,
+    stopwords = T,
+    removeNumbers = T
+  ))
+  lyricMatrix <-as.matrix(tdm)
+  colnames(lyricMatrix) <- filtered$Year
+  comparison.cloud(lyricMatrix, 
+                   max.words = 200,
+                   colors= brewer.pal(12,"Dark2"), 
+                   scale=c(2,0.5),
+                   title.size=1)
+}
+
+createComparisonCloud(lyricsByYears)
+
 
 
 vs <- VectorSource(lyricsByYears$Lyrics)
 cp <- VCorpus(vs)
 
-tMatrix <- TermDocumentMatrix(cp, control = list(
+tdm <- TermDocumentMatrix(cp, control = list(
   removePunctuation = T,
   stopwords = T,
   removeNumbers = T
 ))
 
-inspect(tMatrix)
+lyricsMatrix <- as.matrix(tdm)
+
+df_freq <- data.frame(terms=rownames(lyricsMatrix), 
+                      freq=rowSums(lyricsMatrix), 
+                      stringsAsFactors = F)
+
+
+top_10 <- df_freq %>% 
+  top_n(10, freq) %>%
+  arrange(desc(freq))
+
+top_10 %>%
+  ggplot(aes(x=reorder(terms,freq),y = freq, fill=terms))+
+  geom_bar(stat="identity")+
+  labs(x="Words", y="Number of occurences", title="Number of words")+
+  theme(legend.position = "none")
+
+
+
 
 stopwordsDf <- data.frame(word = stopwords('en'), stringsAsFactors = F)
 
