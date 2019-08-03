@@ -323,7 +323,7 @@ plot_ly(
 
 ![The plot](newplot1.png)
 
-Middle portion of the table contains songs with similar positive to negative ratio. However, when we get to the top or to the bottom of the table, ratio gets higher meaning that songs expose more positive emotions.
+Middle portion of the table contains songs with similar positive to negative ratio. However, when we get to the top or to the bottom of the table, ratio gets higher meaning that songs expose more positive emotions. 
 
 ## Analysing Sentiment Per Song
 
