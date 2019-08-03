@@ -8,6 +8,7 @@ library(tidytext)
 library(wordcloud)
 library(plotly)
 library(RColorBrewer)
+library(colortools)
 
 #  for ggplot
 themeObject <- function() {
@@ -41,54 +42,122 @@ geniusLyrics <- geniusLyricsUnmodified %>%
 lyricsByYears <- geniusLyrics %>%
   group_by(Year) %>%
   filter(Position == min(Position))%>%
+  arrange(desc(Year)) %>%
   as.data.frame()
 
-createComparisonCloud <- function(filtered){
+
+createComparisonCloud <- function(filtered,option=weightTf,setThresold=F){
   vs <- VectorSource(filtered$Lyrics)
+  cp <- VCorpus(vs)
+  tdm <- TermDocumentMatrix(cp, control = list(
+    removePunctuation = T,
+    stopwords = T,
+    removeNumbers = T,
+    weighting = option
+  ))
+  if(setThresold){
+    print('enters')
+    tdm <- removeSparseTerms(tdm,0.9999) 
+  }
+  inspect(tdm)
+  lyricMatrix <-as.matrix(tdm)
+  colnames(lyricMatrix) <- filtered$Year
+  comparison.cloud(lyricMatrix, 
+                   max.words = 200,
+                   colors= wheel("steelblue", num = 12),
+                   scale=c(1,0.5),
+                   title.size=1)
+}
+
+#The comparison cloud for most frequent Words
+createComparisonCloud(lyricsByYears)
+#The comparison cloud for most important Words
+createComparisonCloud(lyricsByYears,weightTfIdf,T)
+
+
+visualizeTopNWords <- function(filtered,topNum){
+  vs <- VectorSource(filtered$Lyrics)
+  cp <- VCorpus(vs)
+  
+  tdm <- TermDocumentMatrix(cp, control = list(
+    removePunctuation = T,
+    stopwords = T,
+    removeNumbers = T
+  ))
+  lyricsMatrix <- as.matrix(tdm)
+  
+  df_freq <- data.frame(terms=rownames(lyricsMatrix), 
+                        freq=rowSums(lyricsMatrix), 
+                        stringsAsFactors = F)
+  
+  
+  top_num <- df_freq %>% 
+    top_n(topNum, freq) %>%
+    arrange(desc(freq))
+  
+  top_num %>%
+    ggplot(aes(x=reorder(terms,freq),y = freq, fill=terms))+
+    geom_bar(stat="identity")+
+    labs(x="Words", y="Number of occurences", title="Number of words")+
+    theme(legend.position = "none")
+}
+
+visualizeTopNWords(lyricsByYears,8)
+
+compareOldestNewest <- function(filtered){
+  oldestLyrics <- filtered %>% 
+    filter(Year == min(Year))
+  
+  newestLyrics <- filtered %>%
+    filter(Year == max(Year))
+
+  lyricsForBoth <- c(oldestLyrics$Lyrics, newestLyrics$Lyrics)
+  
+  vs <- VectorSource(lyricsForBoth)
   cp <- VCorpus(vs)
   tdm <- TermDocumentMatrix(cp, control = list(
     removePunctuation = T,
     stopwords = T,
     removeNumbers = T
   ))
+  inspect(tdm)
   lyricMatrix <-as.matrix(tdm)
-  colnames(lyricMatrix) <- filtered$Year
+  colnames(lyricMatrix) <- c(oldestLyrics$Year, newestLyrics$Year)
+  print(colnames(lyricMatrix))
+  set.seed(1)
   comparison.cloud(lyricMatrix, 
-                   max.words = 200,
-                   colors= brewer.pal(12,"Dark2"), 
-                   scale=c(2,0.5),
-                   title.size=1)
+                   max.words = 100,
+                   colors= wheel("steelblue", num = 12),
+                   min.freq = 10,
+                   scale=c(1,0.5),
+                   title.size = 0.5)
 }
 
-createComparisonCloud(lyricsByYears)
+compareOldestNewest(lyricsByYears)
 
 
 
-vs <- VectorSource(lyricsByYears$Lyrics)
-cp <- VCorpus(vs)
+# df_freqs<-c()
+# for(i in 1:length(lyricsByYears$Lyrics)){
+# 
+#   vs <- VectorSource(lyricsByYears$Lyrics[i])
+#   cp <- VCorpus(vs)
+#   tdm <- TermDocumentMatrix(cp, control = list(
+#     removePunctuation = T,
+#     stopwords = T,
+#     removeNumbers = T
+#   ))
+# 
+#   lyricsMatrix <- as.matrix(tdm)
+# 
+#   df_freq <- data.frame(terms=rownames(lyricsMatrix),
+#                         freq=rowSums(lyricsMatrix),
+#                         stringsAsFactors = F)
+#   df_freqs<-rbind(df_freqs, df_freq)
+# }
 
-tdm <- TermDocumentMatrix(cp, control = list(
-  removePunctuation = T,
-  stopwords = T,
-  removeNumbers = T
-))
-
-lyricsMatrix <- as.matrix(tdm)
-
-df_freq <- data.frame(terms=rownames(lyricsMatrix), 
-                      freq=rowSums(lyricsMatrix), 
-                      stringsAsFactors = F)
 
 
-top_10 <- df_freq %>% 
-  top_n(10, freq) %>%
-  arrange(desc(freq))
-
-top_10 %>%
-  ggplot(aes(x=reorder(terms,freq),y = freq, fill=terms))+
-  geom_bar(stat="identity")+
-  labs(x="Words", y="Number of occurences", title="Number of words")+
-  theme(legend.position = "none")
 
 
 
